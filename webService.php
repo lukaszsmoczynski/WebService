@@ -680,7 +680,6 @@ final class WebService {
     global $WebServiceConstants;
 
     $connection->beginTransaction();
-    $id;
     try {
       $year = $params[$WebServiceConstants['SaveGroup']['Parameters']['CREATION_YEAR']];
       $parentGroupId = $params[$WebServiceConstants['SaveGroup']['Parameters']['PARENT_GROUP_ID']];
@@ -689,7 +688,6 @@ final class WebService {
       }
       
       if ($params[$WebServiceConstants['SaveGroup']['Parameters']['ID']] != null) {
-        $id = $params[$WebServiceConstants['SaveGroup']['Parameters']['ID']];
         $connection->execQuery(' UPDATE GROUPS SET '
                 . ' NAME = ' . quotedStr($params[$WebServiceConstants['SaveGroup']['Parameters']['NAME']]) . ', '
                 . ' CREATION_YEAR = ' . $year . ', '
@@ -1144,21 +1142,40 @@ final class WebService {
 
     $connection->beginTransaction();
     try {
-      $query = $connection->execQuery(' SELECT u.ID, u.LOGIN, u.NAME, u.SURNAME,
-                                          p.COUNTRY, p.CITY, p.REGION, p.STREET, p.HOUSE_NUMBER, 
-                                          p.FLAT_NUMBER, p.POSTAL_CODE, p.E_MAIL
-                                        FROM USERS u 
-                                        JOIN PARENTS p ON p.ID_PARENT = u.ID AND p.ACTIVE = 1
-                                        ORDER BY u.LOGIN ');
+      $queryText = ' SELECT u.ID, u.LOGIN, u.NAME, u.SURNAME,
+                       p.COUNTRY, p.CITY, p.REGION, p.STREET, p.HOUSE_NUMBER, 
+                       p.FLAT_NUMBER, p.POSTAL_CODE, p.E_MAIL,
+                       GROUP_CONCAT(NUMBER SEPARATOR \';\') NUMBERS ';
+      if ($params[$WebServiceConstants['GetParents']['Parameters']['FIND_STUDENTS_IDS']]) {
+        $queryText .= ', GROUP_CONCAT(DISTINCT CONCAT_WS(\',\', ps.ID_STUDENT, ps.ID_RELATION_TYPE) SEPARATOR \';\') STUDENTS_RELATIONS ';
+      }
+      
+      $queryText .= ' FROM USERS u 
+                      JOIN PARENTS p ON p.ID_PARENT = u.ID AND p.ACTIVE = 1
+                      LEFT JOIN PHONES ph ON ph.ID_PARENT = p.ID_PARENT ';
+      if ($params[$WebServiceConstants['GetParents']['Parameters']['FIND_STUDENTS_IDS']]) {
+        $queryText .= ' LEFT JOIN PARENT_STUDENT ps ON ps.ID_PARENT = p.ID_PARENT ';
+      }
+      
+      $queryText .= ' GROUP BY u.ID
+                      ORDER BY u.LOGIN ';
+      
+      $query = $connection->execQuery($queryText);
 
       $parents = array();
       while ($row = $query->fetch_assoc()) {
-        $queryPhones = $connection->execQuery(' SELECT NUMBER
-                                                FROM PHONES 
-                                                WHERE ID_PARENT = ' . $row['ID']);
-        $phones = array();
-        while ($rowPhones = $queryPhones->fetch_assoc()) {
-          $phones[] = $rowPhones['NUMBER'];
+        $phones = explode(';', $row['NUMBERS']);
+        
+        $students = array();
+        $studentsRelations = array();
+        if ($params[$WebServiceConstants['GetParents']['Parameters']['FIND_STUDENTS_IDS']]) {
+          $students = explode(';', $row['STUDENTS_RELATIONS']);
+          foreach ($students as $value) {
+            $explodeProduct = explode(',', $value);
+            
+            $studentsRelations[] = [$WebServiceConstants['GetParents']['Result']['Parents']['StudentsRelations']['STUDENT_ID'] => $explodeProduct[0],
+                $WebServiceConstants['GetParents']['Result']['Parents']['StudentsRelations']['RELATION_TYPE_ID'] => $explodeProduct[1]];
+          }
         }
         
         $parents[] = array(
@@ -1175,7 +1192,8 @@ final class WebService {
             $WebServiceConstants['GetParents']['Result']['Parents']['FLAT_NUMBER'] => $row['FLAT_NUMBER'],
             $WebServiceConstants['GetParents']['Result']['Parents']['POSTAL_CODE'] => $row['POSTAL_CODE'],
             $WebServiceConstants['GetParents']['Result']['Parents']['E_MAIL'] => $row['E_MAIL'],
-            $WebServiceConstants['GetParents']['Result']['Parents']['PHONES'] => $phones
+            $WebServiceConstants['GetParents']['Result']['Parents']['PHONES'] => $phones,
+            $WebServiceConstants['GetParents']['Result']['Parents']['STUDENTS_RELATIONS'] => $studentsRelations
         );
       }
 
@@ -1259,6 +1277,35 @@ final class WebService {
 
     return $result;
   }
+
+  public static function SaveParentChildren($params) {
+    global $connection;
+    global $WebServiceConstants;
+
+    $connection->beginTransaction();
+    try {      
+      $result = array(0);
+      $connection->execQuery(' DELETE FROM PARENT_STUDENT ');
+      
+      $query = $connection->prepareQuery(' INSERT INTO PARENT_STUDENT(ID_PARENT, ID_STUDENT, ID_RELATION_TYPE) '
+                                       . ' VALUES (' . $params[$WebServiceConstants['SaveParentChildren']['Parameters']['PARENT_ID']] . ', ?, ?) ');
+      
+      foreach ($params[$WebServiceConstants['SaveParentChildren']['Parameters']['STUDENT_RELATION_TYPE']] as $child) {
+        $query->bind_param('ii', 
+                $child[$WebServiceConstants['SaveParentChildren']['Parameters']['StudentRelationType']['STUDENT_ID']], 
+                $child[$WebServiceConstants['SaveParentChildren']['Parameters']['StudentRelationType']['RELATION_TYPE_ID']]);
+        $query->execute();
+      }
+
+      $connection->commit();
+      $result = array($WebServiceConstants['SaveParentChildren']['Result']['RESULT'] => true);
+    } catch (Exception $e) {
+      $connection->rollback();
+      $result = array($WebServiceConstants['SaveParentChildren']['Result']['RESULT'] => false);
+    }
+
+    return $result;
+  }
 }
 
 $request = json_decode(file_get_contents('php://input'), true);
@@ -1269,7 +1316,6 @@ if ($request[$WebServiceConstants['FUNCTION_NAME']] != $WebServiceConstants['Log
   WebService::ValidateToken($request[$WebServiceConstants['TOKEN']]);
 }
 
-$result = '';
 switch ($request[$WebServiceConstants['FUNCTION_NAME']]) {
   case $WebServiceConstants['Login']['FUNCTION_NAME']:
     $result = WebService::Login($request[$WebServiceConstants['PARAMS']]);
@@ -1366,6 +1412,9 @@ switch ($request[$WebServiceConstants['FUNCTION_NAME']]) {
     break;
   case $WebServiceConstants['GetAdmins']['FUNCTION_NAME']:
     $result = WebService::GetAdmins($request[$WebServiceConstants['PARAMS']]);
+    break;
+  case $WebServiceConstants['SaveParentChildren']['FUNCTION_NAME']:
+    $result = WebService::SaveParentChildren($request[$WebServiceConstants['PARAMS']]);
     break;
 }
 

@@ -452,6 +452,7 @@ $WebServiceConstants = array(
     'GetParents' => array(
         'FUNCTION_NAME' => 'GetParents',
         'Parameters' => array(
+            'FIND_STUDENTS_IDS' => 'FIND_STUDENTS_IDS'
         ),
         'Result' => array(
             'RESULT' => 'RESULT',
@@ -469,7 +470,12 @@ $WebServiceConstants = array(
                 'FLAT_NUMBER' => 'FLAT_NUMBER',
                 'POSTAL_CODE' => 'POSTAL_CODE',
                 'E_MAIL' => 'E_MAIL',
-                'PHONES' => 'PHONES'
+                'PHONES' => 'PHONES',
+                'STUDENTS_RELATIONS' => 'STUDENTS_RELATIONS',
+                'StudentsRelations' => array(
+                    'STUDENT_ID' => 'STUDENT_ID',
+                    'RELATION_TYPE_ID' => 'RELATION_TYPE_ID'
+                )
             )
         )
     ),
@@ -504,6 +510,20 @@ $WebServiceConstants = array(
                 'NAME' => 'NAME',
                 'SURNAME' => 'SURNAME'
             )
+        )
+    ),
+    'SaveParentChildren' => array(
+        'FUNCTION_NAME' => 'SaveParentChildren',
+        'Parameters' => array(
+            'PARENT_ID' => 'PARENT_ID',
+            'STUDENT_RELATION_TYPE' => 'STUDENT_RELATION_TYPE',
+            'StudentRelationType' => array(
+              'STUDENT_ID' => 'STUDENT_ID',
+              'RELATION_TYPE_ID' => 'RELATION_TYPE_ID'
+            )
+        ),
+        'Result' => array(
+            'RESULT' => 'RESULT'
         )
     )
 );
